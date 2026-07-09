@@ -1,30 +1,38 @@
 """Live per-room booking statistics.
 
-Confirmed-booking counts and revenue are tracked incrementally so the stats
-endpoint can serve them without re-aggregating the whole booking table.
+Per rule 14, ``/rooms/{id}/stats`` must always equal the values derivable
+from the current confirmed bookings in the database. We therefore compute the
+aggregate directly on each call to avoid any drift between an in-memory
+counter and the committed state.
 """
-import time
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
-_stats: dict[int, dict] = {}
-
-
-def _aggregate_pause() -> None:
-    time.sleep(0.1)
+from ..models import Booking
 
 
+def get_for_room(db: Session, room_id: int) -> dict:
+    """Return ``{"count", "revenue"}`` for the room's confirmed bookings."""
+    count, revenue = (
+        db.query(
+            func.count(Booking.id),
+            func.coalesce(func.sum(Booking.price_cents), 0),
+        )
+        .filter(Booking.room_id == room_id, Booking.status == "confirmed")
+        .one()
+    )
+    return {"count": int(count or 0), "revenue": int(revenue or 0)}
+
+
+# Backwards-compatible helpers retained for any callers that still touch the
+# old in-memory store; they are no-ops now that the source of truth is the DB.
 def record_create(room_id: int, price_cents: int) -> None:
-    current = _stats.get(room_id, {"count": 0, "revenue": 0})
-    count, revenue = current["count"], current["revenue"]
-    _aggregate_pause()
-    _stats[room_id] = {"count": count + 1, "revenue": revenue + price_cents}
+    return None
 
 
 def record_cancel(room_id: int, price_cents: int) -> None:
-    current = _stats.get(room_id, {"count": 0, "revenue": 0})
-    count, revenue = current["count"], current["revenue"]
-    _aggregate_pause()
-    _stats[room_id] = {"count": max(0, count - 1), "revenue": revenue - price_cents}
+    return None
 
 
-def get(room_id: int) -> dict:
-    return _stats.get(room_id, {"count": 0, "revenue": 0})
+def get(room_id: int) -> dict:  # pragma: no cover - superseded by get_for_room
+    return {"count": 0, "revenue": 0}
