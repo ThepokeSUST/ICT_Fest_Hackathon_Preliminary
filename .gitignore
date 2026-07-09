@@ -5,3 +5,15 @@ __pycache__/
 venv/
 .pytest_cache/
 .puku
+
+# SQLite WAL mode side-files
+*.db-shm
+*.db-wal
+
+# Local probe scripts + logs from ad-hoc testing (not part of the API).
+mock_full.py
+smoke_live.py
+verify_401.py
+verify_swagger.py
+server.log
+server.err
